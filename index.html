@@ -3,36 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Coinverter | Scanner</title>
+    <title>Coinverter | Pro Scanner</title>
     <link rel="icon" type="image/png" href="icons/logo.png">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <!-- Cargamos Tesseract desde CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
+
     <header class="navbar">
         <div class="full-container">
-            <div class="logo-area"><img src="icons/logo.png" class="nav-logo"><span class="logo-text">Coinverter</span></div>
+            <div class="logo-area">
+                <img src="icons/logo.png" class="nav-logo">
+                <span class="logo-text">Coinverter</span>
+            </div>
         </div>
     </header>
 
     <main class="full-content">
         <section class="scanner-section">
-            <div class="intro-text"><h1>Conversor Inteligente</h1><p>Apunta con la cámara a un precio.</p></div>
-            <div class="camera-card"><div class="video-container"><video id="video" autoplay playsinline muted></video><div class="red-scan-line"></div></div></div>
+            <div class="intro-text">
+                <h1>Conversor de Precios</h1>
+                <p>Encuadra el número en la franja roja.</p>
+            </div>
+
+            <div class="camera-card">
+                <div class="video-container">
+                    <video id="video" autoplay playsinline muted></video>
+                    <div class="red-scan-line"></div>
+                </div>
+            </div>
+
             <div class="converter-controls">
-                <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
+                <select id="from-currency">
+                    <option value="USD">USD</option>
+                    <option value="ARS" selected>ARS</option>
+                </select>
                 <img src="icons/conv.png" class="conv-icon">
-                <select id="to-currency"><option value="USD" selected>USD</option><option value="ARS">ARS</option></select>
+                <select id="to-currency">
+                    <option value="USD" selected>USD</option>
+                    <option value="ARS">ARS</option>
+                </select>
             </div>
+
             <div class="result-area">
-                <span class="label">Monto Detectado</span><div id="result-value" class="value-main">---</div>
-                <span class="label">Conversión Estimada</span><div id="converted-value" class="value-sub">---</div>
-                <p id="status" class="status-text">Iniciando cámara...</p>
+                <span class="label">Monto detectado</span>
+                <div id="result-value" class="value-main">---</div>
+                <span class="label">Conversión estimada</span>
+                <div id="converted-value" class="value-sub">---</div>
+                <p id="status" class="status-text">Cargando...</p>
             </div>
-            <div class="action-footer"><a href="calculadora.html" class="btn-manual">Conversión Manual</a></div>
+
+            <div class="action-footer">
+                <a href="calculadora.html" class="btn-manual">Conversión manual</a>
+            </div>
         </section>
     </main>
+
     <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
@@ -46,6 +74,8 @@
         const ctx = canvas.getContext('2d');
 
         let exchangeRates = { "USD_ARS": 1000, "ARS_USD": 0.001 };
+        let worker = null;
+        let isProcessing = false;
 
         async function updateRates() {
             const now = new Date().getTime();
@@ -56,39 +86,80 @@
                     const d = await r.json();
                     localStorage.setItem('rate', d.rates.ARS);
                     localStorage.setItem('last_upd', now);
-                } catch(e) {}
+                } catch(e) { console.warn("Usando tasas anteriores."); }
             }
             const rate = parseFloat(localStorage.getItem('rate') || 1000);
             exchangeRates = { "USD_ARS": rate, "ARS_USD": 1/rate };
         }
 
-        async function initOCR() {
-            const worker = await Tesseract.createWorker('eng');
-            await worker.setParameters({ tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: '7' });
-            statusText.innerText = "Listo para Escanear";
-            setInterval(async () => {
-                if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-                    ctx.filter = "grayscale(1) contrast(2.5)";
-                    ctx.drawImage(video, 0, 0);
+        async function recognizeLogic() {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // 1. Recorte ultra-preciso (Solo la franja donde está la línea roja)
+                const vW = video.videoWidth;
+                const vH = video.videoHeight;
+                
+                // Definimos un área de escaneo pequeña (30% del centro) para ganar velocidad
+                canvas.width = vW * 0.6; 
+                canvas.height = vH * 0.2; 
+                
+                const sx = vW * 0.2;
+                const sy = vH * 0.4;
+
+                // 2. Pre-procesamiento agresivo
+                ctx.filter = "grayscale(100%) contrast(300%) brightness(120%)";
+                ctx.drawImage(video, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+
+                // 3. Reconocimiento
+                try {
                     const { data: { text } } = await worker.recognize(canvas);
                     const m = text.trim().match(/\d+/);
                     if (m) {
                         const n = parseFloat(m[0]);
                         resVal.innerText = n;
-                        const total = n * (exchangeRates[`${fromC.value}_${toC.value}`] || 1);
+                        const pair = `${fromC.value}_${toC.value}`;
+                        const total = n * (exchangeRates[pair] || 1);
                         convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
                     }
-                }
-            }, 1000);
+                } catch (err) { console.error(err); }
+            }
+
+            isProcessing = false;
+            requestAnimationFrame(recognizeLogic); // Ciclo optimizado
         }
 
-        window.addEventListener('load', async () => {
+        async function initApp() {
+            statusText.innerText = "Sincronizando divisas...";
             await updateRates();
-            navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}}).then(s => {
-                video.srcObject = s; initOCR();
+
+            statusText.innerText = "Encendiendo motor...";
+            worker = await Tesseract.createWorker('eng', 1, {
+                workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/dist/tesseract-core.wasm.js',
             });
-        });
+            
+            await worker.setParameters({
+                tessedit_char_whitelist: '0123456789',
+                tessedit_pageseg_mode: '13', // Modo: Línea de texto única sin procesar
+            });
+
+            statusText.innerText = "Escáner Activo";
+            statusText.style.color = "#32d74b";
+
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
+            }).then(s => {
+                video.srcObject = s;
+                video.play();
+                recognizeLogic(); // Iniciamos el ciclo
+            }).catch(e => {
+                statusText.innerText = "Error: Permiso de cámara denegado.";
+            });
+        }
+
+        window.addEventListener('load', initApp);
     </script>
 </body>
 </html>
