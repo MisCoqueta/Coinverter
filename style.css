@@ -1,59 +1,117 @@
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
-body { background-color: #000; color: #fff; font-family: 'Roboto', sans-serif; font-size: 11px; overflow-x: hidden; }
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Coinverter</title>
+    <link rel="icon" type="image/png" href="icons/logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+    <header class="navbar">
+        <div class="full-container">
+            <div class="logo-area"><img src="icons/logo.png" class="nav-logo"><span class="logo-text">Coinverter</span></div>
+        </div>
+    </header>
 
-/* Navbar */
-.navbar {
-    position: fixed; top: 0; width: 100%; height: 50px;
-    background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1); z-index: 1000; display: flex; align-items: center;
-}
-.full-container { width: 100%; padding: 0 6%; display: flex; justify-content: space-between; align-items: center; }
-.logo-area { display: flex; align-items: center; gap: 8px; }
-.nav-logo { height: 18px; }
-.logo-text { font-size: 18px; font-weight: 500; }
+    <main class="full-content">
+        <section class="scanner-section">
+            <div class="intro-text"><h1>Conversor de Precios</h1><p>Encuadra el precio en la línea roja.</p></div>
+            
+            <div class="camera-card">
+                <div class="video-container">
+                    <video id="video" autoplay playsinline muted></video>
+                    <div class="red-scan-line"></div>
+                    <div id="guide" class="focus-guide"></div>
+                </div>
+            </div>
 
-/* Content */
-.full-content { padding-top: 75px; padding-bottom: 40px; display: flex; justify-content: center; min-height: 100vh; }
-.scanner-section { width: 100%; max-width: 500px; text-align: center; padding: 0 15px; }
+            <div class="converter-controls">
+                <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
+                <img src="icons/conv.png" class="conv-icon">
+                <select id="to-currency"><option value="USD" selected>USD</option><option value="ARS">ARS</option></select>
+            </div>
 
-.intro-text { margin-bottom: 20px; }
-.intro-text h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
-.intro-text p { font-size: 11px; color: #86868b; }
+            <div class="result-area">
+                <span class="label">Monto detectado</span><div id="result-value" class="value-main">---</div>
+                <span class="label">Conversión estimada</span><div id="converted-value" class="value-sub">---</div>
+                <p id="status" style="font-size:10px; color:#86868b; margin-top:10px;">Cargando...</p>
+            </div>
+            
+            <div class="action-footer"><a href="calculadora.html" class="btn-manual">Conversión manual</a></div>
+        </section>
+    </main>
 
-/* Cámara Panorámica */
-.camera-card {
-    position: relative; width: 100%; aspect-ratio: 16 / 9;
-    border-radius: 20px; overflow: hidden; background: #111; border: 1px solid rgba(255, 255, 255, 0.15);
-}
-video { width: 100%; height: 100%; object-fit: cover; }
+    <canvas id="canvas" style="display:none;"></canvas>
 
-.red-scan-line {
-    position: absolute; width: 100%; height: 2px; background: #ff3b30;
-    box-shadow: 0 0 12px #ff3b30; z-index: 10; top: 0; animation: scanLine 2.2s infinite ease-in-out;
-}
-@keyframes scanLine { 0% { top: 0%; } 50% { top: 100%; } 100% { top: 0%; } }
+    <script>
+        const video = document.getElementById('video');
+        const resVal = document.getElementById('result-value');
+        const convVal = document.getElementById('converted-value');
+        const fromC = document.getElementById('from-currency');
+        const toC = document.getElementById('to-currency');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
 
-/* Guía de enfoque invisible para el usuario pero usada por el JS */
-.focus-guide {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 80%; height: 60px; border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px;
-}
+        let rates = { "USD_ARS": 1000, "ARS_USD": 0.001 };
+        let worker = null;
 
-/* Controles */
-.converter-controls { display: flex; align-items: center; justify-content: center; gap: 20px; margin: 25px 0; }
-select { background: #1c1c1e; color: white; border: 1px solid rgba(255, 255, 255, 0.1); padding: 10px 20px; border-radius: 14px; font-size: 14px; outline: none; appearance: none; }
-.conv-icon { height: 16px; opacity: 0.5; }
+        async function updateRates() {
+            try {
+                const r = await fetch('https://open.er-api.com/v6/latest/USD');
+                const d = await r.json();
+                localStorage.setItem('rate', d.rates.ARS);
+                localStorage.setItem('last_upd', new Date().getTime());
+                rates = { "USD_ARS": d.rates.ARS, "ARS_USD": 1/d.rates.ARS };
+            } catch(e) {
+                const saved = parseFloat(localStorage.getItem('rate') || 1000);
+                rates = { "USD_ARS": saved, "ARS_USD": 1/saved };
+            }
+        }
 
-/* Resultados */
-.result-area { background: #0a0a0a; border-radius: 28px; padding: 25px; border: 1px solid #1c1c1e; }
-.label { font-size: 10px; text-transform: uppercase; color: #86868b; letter-spacing: 1.2px; display: block; margin-bottom: 6px; }
-.value-main { font-size: 18px; color: #86868b; margin-bottom: 12px; }
-.value-sub { font-size: 44px; font-weight: 700; color: #32d74b; letter-spacing: -1.5px; }
+        async function initOCR() {
+            worker = await Tesseract.createWorker('eng');
+            await worker.setParameters({ 
+                tessedit_char_whitelist: '0123456789', 
+                tessedit_pageseg_mode: '7' 
+            });
+            document.getElementById('status').innerText = "Escáner Activo";
+            
+            setInterval(async () => {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    // CROP: Tomamos solo el centro para que sea rápido y preciso
+                    const cropW = video.videoWidth * 0.7;
+                    const cropH = video.videoHeight * 0.2;
+                    const sx = (video.videoWidth - cropW) / 2;
+                    const sy = (video.videoHeight - cropH) / 2;
 
-/* Botón Manual */
-.action-footer { margin-top: 25px; }
-.btn-manual { display: inline-block; background: rgba(255, 255, 255, 0.08); color: #fff; text-decoration: none; font-size: 14px; padding: 14px 32px; border-radius: 100px; border: 1px solid rgba(255, 255, 255, 0.1); }
+                    canvas.width = cropW;
+                    canvas.height = cropH;
+                    
+                    ctx.filter = "grayscale(1) contrast(2)";
+                    ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+                    
+                    const { data: { text } } = await worker.recognize(canvas);
+                    const clean = text.replace(/[^0-9]/g, '');
+                    
+                    if (clean.length > 0) {
+                        const n = parseFloat(clean);
+                        resVal.innerText = n;
+                        const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
+                        convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
+                    }
+                }
+            }, 1000);
+        }
 
-/* Calculadora Input */
-.input-card { width: 100%; height: 80px; background: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
-#manual-input { background: transparent; border: none; color: #fff; font-family: 'Roboto'; font-size: 32px; font-weight: 600; text-align: center; width: 90%; outline: none; }
+        window.addEventListener('load', async () => {
+            await updateRates();
+            navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}}).then(s => {
+                video.srcObject = s; initOCR();
+            });
+        });
+    </script>
+</body>
+</html>
