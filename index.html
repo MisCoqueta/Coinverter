@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Coinverter | Scanner</title>
+    <title>Coinverter | Pro Scanner</title>
     <link rel="icon" type="image/png" href="icons/logo.png">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -18,21 +18,33 @@
 
     <main class="full-content">
         <section class="scanner-section">
-            <div class="intro-text"><h1>Conversor de Precios</h1><p>Encuadra el número completo en la franja roja.</p></div>
-            <div class="camera-card"><div class="video-container"><video id="video" autoplay playsinline muted></video><div class="red-scan-line"></div></div></div>
+            <div class="intro-text">
+                <h1>Escáner de Alta Precisión</h1>
+                <p>Detecta fuentes complejas y diseños artísticos.</p>
+            </div>
+            
+            <div class="camera-card">
+                <div class="video-container">
+                    <video id="video" autoplay playsinline muted></video>
+                    <div class="red-scan-line"></div>
+                </div>
+            </div>
+
             <div class="converter-controls">
                 <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
                 <img src="icons/conv.png" class="conv-icon">
                 <select id="to-currency"><option value="USD" selected>USD</option><option value="ARS">ARS</option></select>
             </div>
+
             <div class="result-area">
                 <span class="label">Monto detectado</span><div id="result-value" class="value-main">---</div>
                 <span class="label">Conversión estimada</span><div id="converted-value" class="value-sub">---</div>
-                <p id="status" class="status-text">Cargando motor...</p>
+                <p id="status" class="status-text">Cargando inteligencia...</p>
             </div>
             <div class="action-footer"><a href="calculadora.html" class="btn-manual">Conversión manual</a></div>
         </section>
     </main>
+
     <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
@@ -48,71 +60,93 @@
         let rates = { "USD_ARS": 1000, "ARS_USD": 0.001 };
         let worker = null;
 
-        async function updateRates() {
-            const now = new Date().getTime();
-            const last = localStorage.getItem('last_upd');
-            if (!last || (now - last) > 12 * 60 * 60 * 1000) {
-                try {
-                    const r = await fetch('https://open.er-api.com/v6/latest/USD');
-                    const d = await r.json();
-                    localStorage.setItem('rate', d.rates.ARS);
-                    localStorage.setItem('last_upd', now);
-                } catch(e) {}
+        // FUNCIÓN DE PROCESAMIENTO AVANZADO DE PÍXELES
+        function applyExtremeFilters(context, w, h) {
+            const imgData = context.getImageData(0, 0, w, h);
+            const data = imgData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                // Convertir a escala de grises pesada
+                const brightness = (data[i] * 0.34) + (data[i + 1] * 0.5) + (data[i + 2] * 0.16);
+                
+                // Umbralización adaptativa simple: 
+                // Si el píxel es oscuro, lo forzamos a negro puro. Si es claro, blanco puro.
+                const v = brightness < 125 ? 0 : 255;
+                
+                data[i] = v;     // R
+                data[i + 1] = v; // G
+                data[i + 2] = v; // B
             }
-            const rate = parseFloat(localStorage.getItem('rate') || 1000);
-            rates = { "USD_ARS": rate, "ARS_USD": 1/rate };
+            context.putImageData(imgData, 0, 0);
+        }
+
+        async function updateRates() {
+            try {
+                const r = await fetch('https://open.er-api.com/v6/latest/USD');
+                const d = await r.json();
+                localStorage.setItem('rate', d.rates.ARS);
+                rates = { "USD_ARS": d.rates.ARS, "ARS_USD": 1/d.rates.ARS };
+            } catch(e) {
+                const saved = parseFloat(localStorage.getItem('rate') || 1480);
+                rates = { "USD_ARS": saved, "ARS_USD": 1/saved };
+            }
         }
 
         async function initOCR() {
             worker = await Tesseract.createWorker('eng');
             await worker.setParameters({ 
                 tessedit_char_whitelist: '0123456789', 
-                tessedit_pageseg_mode: '7' // Trata el área como una sola línea de texto
+                tessedit_pageseg_mode: '7' 
             });
             statusText.innerText = "Escáner Activo";
+            statusText.style.color = "#32d74b";
             
-            // Ciclo de lectura cada 1 segundo
             setInterval(async () => {
                 if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                    // 1. REESCALADO PARA PRECISIÓN: Agrandamos la imagen para que la IA la vea mejor
-                    // Definimos el área de recorte (centro del video)
-                    const cropW = video.videoWidth * 0.6;
-                    const cropH = video.videoHeight * 0.2;
-                    const cropX = video.videoWidth * 0.2;
-                    const cropY = video.videoHeight * 0.4;
-
-                    // El canvas tendrá el triple de resolución del recorte original
-                    canvas.width = cropW * 3; 
-                    canvas.height = cropH * 3;
+                    const vW = video.videoWidth;
+                    const vH = video.videoHeight;
                     
-                    // Aplicamos un filtro de contraste fuerte antes de dibujar
-                    ctx.filter = "grayscale(100%) contrast(300%) brightness(120%)";
+                    // Área de interés (Centro)
+                    const cropW = vW * 0.6;
+                    const cropH = vH * 0.2;
+                    const cropX = vW * 0.2;
+                    const cropY = vH * 0.4;
+
+                    // Agrandamos x4 para que la IA vea fuentes delgadas o extrañas con claridad
+                    canvas.width = cropW * 4; 
+                    canvas.height = cropH * 4;
+                    
+                    // Paso 1: Dibujar con filtros de nitidez
+                    ctx.filter = "contrast(400%) brightness(110%) blur(0px)";
                     ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
                     
-                    const { data: { text } } = await worker.recognize(canvas);
+                    // Paso 2: Limpieza de píxeles manual (Binarización)
+                    applyExtremeFilters(ctx, canvas.width, canvas.height);
                     
-                    // 2. REGEX PARA DETECTAR NÚMEROS DE VARIOS DÍGITOS
-                    // Buscamos todas las secuencias de números y las unimos
-                    const numbersOnly = text.replace(/[^0-9]/g, '');
+                    const { data: { text, confidence } } = await worker.recognize(canvas);
                     
-                    if (numbersOnly.length > 0) {
-                        const n = parseFloat(numbersOnly);
-                        resVal.innerText = n;
-                        const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
-                        convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
+                    // Solo aceptar si la confianza es decente para evitar "falsos positivos"
+                    if (confidence > 50) {
+                        const numbersOnly = text.replace(/[^0-9]/g, '');
+                        if (numbersOnly.length > 0) {
+                            const n = parseFloat(numbersOnly);
+                            resVal.innerText = n;
+                            const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
+                            convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
+                        }
                     }
                 }
-            }, 1000);
+            }, 800); // Un poco más rápido que un segundo
         }
 
         window.addEventListener('load', async () => {
             await updateRates();
             navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: { ideal: 1280 } }
+                video: { facingMode: "environment", width: { ideal: 1920 } }
             }).then(s => {
                 video.srcObject = s; 
                 initOCR();
-            }).catch(e => statusText.innerText = "Error: Acceso a cámara bloqueado.");
+            }).catch(() => statusText.innerText = "Error: Cámara no disponible.");
         });
     </script>
 </body>
