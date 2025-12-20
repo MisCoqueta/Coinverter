@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Coinverter | Pro Scanner</title>
+    <title>Coinverter | Scanner Full Area</title>
     <link rel="icon" type="image/png" href="icons/logo.png">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -12,7 +12,7 @@
 <body>
     <header class="navbar">
         <div class="full-container">
-            <div class="logo-area"><img src="icons/logo.png" class="nav-logo" alt="Logo"><span class="logo-text">Coinverter</span></div>
+            <div class="logo-area"><img src="icons/logo.png" class="nav-logo" alt="logo"><span class="logo-text">Coinverter</span></div>
         </div>
     </header>
 
@@ -20,7 +20,7 @@
         <section class="scanner-section">
             <div class="intro-text">
                 <h1>Conversor de Precios</h1>
-                <p>Encuadra el precio. Los símbolos serán ignorados.</p>
+                <p>Cualquier número dentro del área será detectado.</p>
             </div>
             
             <div class="camera-card">
@@ -32,14 +32,14 @@
 
             <div class="converter-controls">
                 <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
-                <img src="icons/conv.png" class="conv-icon" alt="to">
+                <img src="icons/conv.png" class="conv-icon" alt="icon">
                 <select id="to-currency"><option value="USD" selected>USD</option><option value="ARS">ARS</option></select>
             </div>
 
             <div class="result-area">
                 <span class="label">Monto detectado</span><div id="result-value" class="value-main">---</div>
                 <span class="label">Conversión estimada</span><div id="converted-value" class="value-sub">---</div>
-                <p id="status" class="status-text">Iniciando inteligencia...</p>
+                <p id="status" class="status-text">Iniciando...</p>
             </div>
             <div class="action-footer"><a href="calculadora.html" class="btn-manual">Conversión manual</a></div>
         </section>
@@ -60,17 +60,6 @@
         let rates = { "USD_ARS": 1000, "ARS_USD": 0.001 };
         let worker = null;
 
-        function applyExtremeFilters(context, w, h) {
-            const imgData = context.getImageData(0, 0, w, h);
-            const data = imgData.data;
-            for (let i = 0; i < data.length; i += 4) {
-                const brightness = (data[i] * 0.34) + (data[i + 1] * 0.5) + (data[i + 2] * 0.16);
-                const v = brightness < 130 ? 0 : 255; // Umbral de binarización
-                data[i] = data[i+1] = data[i+2] = v;
-            }
-            context.putImageData(imgData, 0, 0);
-        }
-
         async function updateRates() {
             const now = new Date().getTime();
             const last = localStorage.getItem('last_upd');
@@ -88,42 +77,45 @@
 
         async function initOCR() {
             worker = await Tesseract.createWorker('eng');
-            // CAMBIO CLAVE: Incluimos el símbolo $ en la lista permitida para que la IA lo reconozca como tal
-            // y no intente "convertirlo" en un 5 o un 8.
+            // Permitimos símbolos comunes para que no los confunda con números
             await worker.setParameters({ 
                 tessedit_char_whitelist: '0123456789$.', 
                 tessedit_pageseg_mode: '7' 
             });
             statusText.innerText = "Escáner Activo";
-            statusText.style.color = "#32d74b";
             
             setInterval(async () => {
                 if (video.readyState === video.HAVE_ENOUGH_DATA) {
                     const vW = video.videoWidth;
                     const vH = video.videoHeight;
-                    const cropW = vW * 0.6; const cropH = vH * 0.2;
-                    const cropX = vW * 0.2; const cropY = vH * 0.4;
+                    
+                    // --- NUEVA LÓGICA: ÁREA TOTAL ---
+                    // Tomamos el 100% del ancho y el 30% del alto central del sensor
+                    const cropW = vW; 
+                    const cropH = vH * 0.3;
+                    const cropX = 0;
+                    const cropY = vH * 0.35;
 
-                    canvas.width = cropW * 4; canvas.height = cropH * 4;
-                    ctx.filter = "contrast(400%) brightness(110%)";
+                    // Aumentamos resolución para que no pierda detalle al ser ancho
+                    canvas.width = cropW; 
+                    canvas.height = cropH;
+                    
+                    ctx.filter = "grayscale(100%) contrast(300%) brightness(110%)";
                     ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-                    applyExtremeFilters(ctx, canvas.width, canvas.height);
                     
                     const { data: { text, confidence } } = await worker.recognize(canvas);
                     
-                    if (confidence > 60) {
-                        // EXPRESIÓN REGULAR MEJORADA: 
-                        // Buscamos solo los números dentro de la cadena detectada
-                        const match = text.match(/\d+/); 
-                        if (match) {
-                            const n = parseFloat(match[0]);
+                    if (confidence > 50) {
+                        const m = text.match(/\d+/); 
+                        if (m) {
+                            const n = parseFloat(m[0]);
                             resVal.innerText = n;
                             const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
                             convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
                         }
                     }
                 }
-            }, 800);
+            }, 900);
         }
 
         window.addEventListener('load', async () => {
@@ -131,8 +123,7 @@
             navigator.mediaDevices.getUserMedia({
                 video: { facingMode: "environment", width: { ideal: 1920 } }
             }).then(s => {
-                video.srcObject = s; 
-                initOCR();
+                video.srcObject = s; initOCR();
             }).catch(() => statusText.innerText = "Error: Cámara no disponible.");
         });
     </script>
