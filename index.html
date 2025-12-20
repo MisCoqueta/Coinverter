@@ -12,14 +12,20 @@
 <body>
     <header class="navbar">
         <div class="full-container">
-            <div class="logo-area"><img src="icons/logo.png" class="nav-logo"><span class="logo-text">Coinverter</span></div>
+            <div class="logo-area">
+                <img src="icons/logo.png" class="nav-logo">
+                <span class="logo-text">Coinverter</span>
+            </div>
         </div>
     </header>
 
     <main class="full-content">
         <section class="scanner-section">
-            <div class="intro-text"><h1>Conversor de Precios</h1><p>Encuadra el precio en la línea roja.</p></div>
-            
+            <div class="intro-text">
+                <h1>Conversor de Precios</h1>
+                <p>Encuadra el precio en la línea roja.</p>
+            </div>
+
             <div class="camera-card">
                 <div class="video-container">
                     <video id="video" autoplay playsinline muted></video>
@@ -29,18 +35,32 @@
             </div>
 
             <div class="converter-controls">
-                <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
+                <select id="from-currency">
+                    <option value="USD">USD</option>
+                    <option value="ARS" selected>ARS</option>
+                </select>
                 <img src="icons/conv.png" class="conv-icon">
-                <select id="to-currency"><option value="USD" selected>USD</option><option value="ARS">ARS</option></select>
+                <select id="to-currency">
+                    <option value="USD" selected>USD</option>
+                    <option value="ARS">ARS</option>
+                </select>
             </div>
 
             <div class="result-area">
-                <span class="label">Monto detectado</span><div id="result-value" class="value-main">---</div>
-                <span class="label">Conversión estimada</span><div id="converted-value" class="value-sub">---</div>
-                <p id="status" style="font-size:10px; color:#86868b; margin-top:10px;">Cargando...</p>
+                <span class="label">Monto detectado</span>
+                <div id="result-value" class="value-main">---</div>
+
+                <span class="label">Conversión estimada</span>
+                <div id="converted-value" class="value-sub">---</div>
+
+                <p id="status" style="font-size:10px; color:#86868b; margin-top:10px;">
+                    Cargando...
+                </p>
             </div>
-            
-            <div class="action-footer"><a href="calculadora.html" class="btn-manual">Conversión manual</a></div>
+
+            <div class="action-footer">
+                <a href="calculadora.html" class="btn-manual">Conversión manual</a>
+            </div>
         </section>
     </main>
 
@@ -64,24 +84,26 @@
                 const d = await r.json();
                 localStorage.setItem('rate', d.rates.ARS);
                 localStorage.setItem('last_upd', new Date().getTime());
-                rates = { "USD_ARS": d.rates.ARS, "ARS_USD": 1/d.rates.ARS };
+                rates = { "USD_ARS": d.rates.ARS, "ARS_USD": 1 / d.rates.ARS };
             } catch(e) {
                 const saved = parseFloat(localStorage.getItem('rate') || 1000);
-                rates = { "USD_ARS": saved, "ARS_USD": 1/saved };
+                rates = { "USD_ARS": saved, "ARS_USD": 1 / saved };
             }
         }
 
         async function initOCR() {
             worker = await Tesseract.createWorker('eng');
-            await worker.setParameters({ 
-                tessedit_char_whitelist: '0123456789', 
-                tessedit_pageseg_mode: '7' 
+            await worker.setParameters({
+                tessedit_char_whitelist: '0123456789',
+                tessedit_pageseg_mode: '8',
+                classify_bln_numeric_mode: 1
             });
+
             document.getElementById('status').innerText = "Escáner Activo";
-            
+
             setInterval(async () => {
                 if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                    // CROP: Tomamos solo el centro para que sea rápido y preciso
+
                     const cropW = video.videoWidth * 0.7;
                     const cropH = video.videoHeight * 0.2;
                     const sx = (video.videoWidth - cropW) / 2;
@@ -89,28 +111,44 @@
 
                     canvas.width = cropW;
                     canvas.height = cropH;
-                    
-                    ctx.filter = "grayscale(1) contrast(2)";
+
+                    ctx.filter = "grayscale(1) contrast(3) brightness(1.2)";
                     ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-                    
+
+                    // BINARIZACIÓN
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    for (let i = 0; i < imgData.data.length; i += 4) {
+                        const avg = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
+                        const v = avg > 140 ? 255 : 0;
+                        imgData.data[i] = imgData.data[i+1] = imgData.data[i+2] = v;
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+
                     const { data: { text } } = await worker.recognize(canvas);
                     const clean = text.replace(/[^0-9]/g, '');
-                    
-                    if (clean.length > 0) {
-                        const n = parseFloat(clean);
-                        resVal.innerText = n;
-                        const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
-                        convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
-                    }
+
+                    if (clean.length < 2 || clean.length > 7) return;
+
+                    const n = parseInt(clean, 10);
+                    if (n <= 0 || n > 10000000) return;
+
+                    resVal.innerText = n.toLocaleString('es-AR');
+
+                    const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
+                    convVal.innerText =
+                        total.toLocaleString('es-AR', { minimumFractionDigits: 2 }) +
+                        " " + toC.value;
                 }
             }, 1000);
         }
 
         window.addEventListener('load', async () => {
             await updateRates();
-            navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}}).then(s => {
-                video.srcObject = s; initOCR();
-            });
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                .then(s => {
+                    video.srcObject = s;
+                    initOCR();
+                });
         });
     </script>
 </body>
