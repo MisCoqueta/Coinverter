@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Coinverter | Scanner Full Area</title>
+    <title>Coinverter</title>
     <link rel="icon" type="image/png" href="icons/logo.png">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -12,35 +12,34 @@
 <body>
     <header class="navbar">
         <div class="full-container">
-            <div class="logo-area"><img src="icons/logo.png" class="nav-logo" alt="logo"><span class="logo-text">Coinverter</span></div>
+            <div class="logo-area"><img src="icons/logo.png" class="nav-logo"><span class="logo-text">Coinverter</span></div>
         </div>
     </header>
 
     <main class="full-content">
         <section class="scanner-section">
-            <div class="intro-text">
-                <h1>Conversor de Precios</h1>
-                <p>Cualquier número dentro del área será detectado.</p>
-            </div>
+            <div class="intro-text"><h1>Conversor de Precios</h1><p>Encuadra el precio en la línea roja.</p></div>
             
             <div class="camera-card">
                 <div class="video-container">
                     <video id="video" autoplay playsinline muted></video>
                     <div class="red-scan-line"></div>
+                    <div id="guide" class="focus-guide"></div>
                 </div>
             </div>
 
             <div class="converter-controls">
                 <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
-                <img src="icons/conv.png" class="conv-icon" alt="icon">
+                <img src="icons/conv.png" class="conv-icon">
                 <select id="to-currency"><option value="USD" selected>USD</option><option value="ARS">ARS</option></select>
             </div>
 
             <div class="result-area">
                 <span class="label">Monto detectado</span><div id="result-value" class="value-main">---</div>
                 <span class="label">Conversión estimada</span><div id="converted-value" class="value-sub">---</div>
-                <p id="status" class="status-text">Iniciando...</p>
+                <p id="status" style="font-size:10px; color:#86868b; margin-top:10px;">Cargando...</p>
             </div>
+            
             <div class="action-footer"><a href="calculadora.html" class="btn-manual">Conversión manual</a></div>
         </section>
     </main>
@@ -51,7 +50,6 @@
         const video = document.getElementById('video');
         const resVal = document.getElementById('result-value');
         const convVal = document.getElementById('converted-value');
-        const statusText = document.getElementById('status');
         const fromC = document.getElementById('from-currency');
         const toC = document.getElementById('to-currency');
         const canvas = document.getElementById('canvas');
@@ -61,70 +59,58 @@
         let worker = null;
 
         async function updateRates() {
-            const now = new Date().getTime();
-            const last = localStorage.getItem('last_upd');
-            if (!last || (now - last) > 12 * 60 * 60 * 1000) {
-                try {
-                    const r = await fetch('https://open.er-api.com/v6/latest/USD');
-                    const d = await r.json();
-                    localStorage.setItem('rate', d.rates.ARS);
-                    localStorage.setItem('last_upd', now);
-                } catch(e) {}
+            try {
+                const r = await fetch('https://open.er-api.com/v6/latest/USD');
+                const d = await r.json();
+                localStorage.setItem('rate', d.rates.ARS);
+                localStorage.setItem('last_upd', new Date().getTime());
+                rates = { "USD_ARS": d.rates.ARS, "ARS_USD": 1/d.rates.ARS };
+            } catch(e) {
+                const saved = parseFloat(localStorage.getItem('rate') || 1000);
+                rates = { "USD_ARS": saved, "ARS_USD": 1/saved };
             }
-            const rate = parseFloat(localStorage.getItem('rate') || 1000);
-            rates = { "USD_ARS": rate, "ARS_USD": 1/rate };
         }
 
         async function initOCR() {
             worker = await Tesseract.createWorker('eng');
-            // Permitimos símbolos comunes para que no los confunda con números
             await worker.setParameters({ 
-                tessedit_char_whitelist: '0123456789$.', 
+                tessedit_char_whitelist: '0123456789', 
                 tessedit_pageseg_mode: '7' 
             });
-            statusText.innerText = "Escáner Activo";
+            document.getElementById('status').innerText = "Escáner Activo";
             
             setInterval(async () => {
                 if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                    const vW = video.videoWidth;
-                    const vH = video.videoHeight;
-                    
-                    // --- NUEVA LÓGICA: ÁREA TOTAL ---
-                    // Tomamos el 100% del ancho y el 30% del alto central del sensor
-                    const cropW = vW; 
-                    const cropH = vH * 0.3;
-                    const cropX = 0;
-                    const cropY = vH * 0.35;
+                    // CROP: Tomamos solo el centro para que sea rápido y preciso
+                    const cropW = video.videoWidth * 0.7;
+                    const cropH = video.videoHeight * 0.2;
+                    const sx = (video.videoWidth - cropW) / 2;
+                    const sy = (video.videoHeight - cropH) / 2;
 
-                    // Aumentamos resolución para que no pierda detalle al ser ancho
-                    canvas.width = cropW; 
+                    canvas.width = cropW;
                     canvas.height = cropH;
                     
-                    ctx.filter = "grayscale(100%) contrast(300%) brightness(110%)";
-                    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+                    ctx.filter = "grayscale(1) contrast(2)";
+                    ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
                     
-                    const { data: { text, confidence } } = await worker.recognize(canvas);
+                    const { data: { text } } = await worker.recognize(canvas);
+                    const clean = text.replace(/[^0-9]/g, '');
                     
-                    if (confidence > 50) {
-                        const m = text.match(/\d+/); 
-                        if (m) {
-                            const n = parseFloat(m[0]);
-                            resVal.innerText = n;
-                            const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
-                            convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
-                        }
+                    if (clean.length > 0) {
+                        const n = parseFloat(clean);
+                        resVal.innerText = n;
+                        const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
+                        convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
                     }
                 }
-            }, 900);
+            }, 1000);
         }
 
         window.addEventListener('load', async () => {
             await updateRates();
-            navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: { ideal: 1920 } }
-            }).then(s => {
+            navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}}).then(s => {
                 video.srcObject = s; initOCR();
-            }).catch(() => statusText.innerText = "Error: Cámara no disponible.");
+            });
         });
     </script>
 </body>
