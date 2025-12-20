@@ -1,8 +1,6 @@
-/* --- BASE --- */
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
-body { background-color: #000; color: #fff; font-family: 'Roboto', sans-serif; font-size: 11px; line-height: 1.5; overflow-x: hidden; }
+body { background-color: #000; color: #fff; font-family: 'Roboto', sans-serif; font-size: 11px; overflow-x: hidden; }
 
-/* NAVBAR GLASS */
 .navbar {
     position: fixed; top: 0; width: 100%; height: 50px;
     background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
@@ -11,55 +9,52 @@ body { background-color: #000; color: #fff; font-family: 'Roboto', sans-serif; f
 .full-container { width: 100%; padding: 0 6%; display: flex; justify-content: space-between; align-items: center; }
 .logo-area { display: flex; align-items: center; gap: 8px; }
 .nav-logo { height: 18px; }
-.logo-text { font-size: 18px; font-weight: 500; letter-spacing: -0.5px; }
+.logo-text { font-size: 18px; font-weight: 500; }
 
-/* CONTENIDO */
 .full-content { padding-top: 75px; padding-bottom: 40px; display: flex; justify-content: center; min-height: 100vh; }
 .scanner-section { width: 100%; max-width: 500px; text-align: center; padding: 0 15px; }
+
 .intro-text { margin-bottom: 20px; }
 .intro-text h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
 .intro-text p { font-size: 11px; color: #86868b; }
 
-/* CÁMARA PANORÁMICA */
+/* Cámara Panorámica */
 .camera-card {
     position: relative; width: 100%; aspect-ratio: 3 / 1;
     border-radius: 18px; overflow: hidden; background: #111; border: 1px solid rgba(255, 255, 255, 0.15);
 }
+.video-container { width: 100%; height: 100%; position: relative; }
 video { width: 100%; height: 100%; object-fit: cover; }
+
 .red-scan-line {
     position: absolute; width: 100%; height: 2px; background: #ff3b30;
     box-shadow: 0 0 12px #ff3b30; z-index: 10; top: 0; animation: scanLine 2.2s infinite ease-in-out;
 }
-@keyframes scanLine { 0% { top: 0%; opacity: 0.4; } 50% { top: 100%; opacity: 1; } 100% { top: 0%; opacity: 0.4; } }
+@keyframes scanLine { 0% { top: 0%; } 50% { top: 100%; } 100% { top: 0%; } }
 
-/* INPUT MANUAL */
+/* Input Manual (Calculadora) */
 .input-card {
-    width: 100%; height: 80px; background: rgba(255, 255, 255, 0.05);
+    width: 100%; height: 70px; background: rgba(255, 255, 255, 0.05);
     border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1);
     display: flex; align-items: center; justify-content: center; margin-bottom: 10px;
 }
 #manual-input { background: transparent; border: none; color: #fff; font-family: 'Roboto'; font-size: 32px; font-weight: 600; text-align: center; width: 90%; outline: none; }
 
-/* CONTROLES */
 .converter-controls { display: flex; align-items: center; justify-content: center; gap: 20px; margin: 20px 0; }
 select { background: #1c1c1e; color: white; border: 1px solid rgba(255, 255, 255, 0.1); padding: 10px 20px; border-radius: 14px; font-size: 14px; outline: none; appearance: none; }
 .conv-icon { height: 16px; opacity: 0.5; }
 
-/* RESULTADOS */
 .result-area { background: #0a0a0a; border-radius: 28px; padding: 25px; border: 1px solid #1c1c1e; }
 .label { font-size: 10px; text-transform: uppercase; color: #86868b; letter-spacing: 1.2px; display: block; margin-bottom: 6px; }
 .value-main { font-size: 18px; color: #86868b; margin-bottom: 12px; }
 .value-sub { font-size: 44px; font-weight: 700; color: #32d74b; letter-spacing: -1.5px; }
-.status-text { font-size: 11px; margin-top: 10px; color: #ff3b30; font-weight: 500; }
+.status-text { font-size: 11px; margin-top: 10px; color: #86868b; }
 
-/* BOTÓN ACCIÓN */
 .action-footer { margin-top: 25px; }
 .btn-manual { display: inline-block; background: rgba(255, 255, 255, 0.08); color: #fff; text-decoration: none; font-size: 14px; padding: 14px 32px; border-radius: 100px; border: 1px solid rgba(255, 255, 255, 0.1); transition: 0.3s; }
-.btn-manual:hover { background: rgba(255, 255, 255, 0.15); }
 
 @media (max-width: 480px) {
     .camera-card { aspect-ratio: 2.5 / 1; }
-    .input-card { height: 70px; }
     .value-sub { font-size: 38px; }
     .btn-manual { width: 100%; text-align: center; }
 }
