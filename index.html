@@ -18,7 +18,7 @@
 
     <main class="full-content">
         <section class="scanner-section">
-            <div class="intro-text"><h1>Conversor de Precios</h1><p>Encuadra el número en la franja roja.</p></div>
+            <div class="intro-text"><h1>Conversor de Precios</h1><p>Encuadra el número completo en la franja roja.</p></div>
             <div class="camera-card"><div class="video-container"><video id="video" autoplay playsinline muted></video><div class="red-scan-line"></div></div></div>
             <div class="converter-controls">
                 <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
@@ -28,7 +28,7 @@
             <div class="result-area">
                 <span class="label">Monto detectado</span><div id="result-value" class="value-main">---</div>
                 <span class="label">Conversión estimada</span><div id="converted-value" class="value-sub">---</div>
-                <p id="status" class="status-text">Iniciando...</p>
+                <p id="status" class="status-text">Cargando motor...</p>
             </div>
             <div class="action-footer"><a href="calculadora.html" class="btn-manual">Conversión manual</a></div>
         </section>
@@ -64,21 +64,39 @@
         }
 
         async function initOCR() {
-            statusText.innerText = "Cargando motor...";
             worker = await Tesseract.createWorker('eng');
-            await worker.setParameters({ tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: '7' });
+            await worker.setParameters({ 
+                tessedit_char_whitelist: '0123456789', 
+                tessedit_pageseg_mode: '7' // Trata el área como una sola línea de texto
+            });
             statusText.innerText = "Escáner Activo";
             
+            // Ciclo de lectura cada 1 segundo
             setInterval(async () => {
                 if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                    // Recorte central para velocidad
-                    canvas.width = 400; canvas.height = 100;
-                    ctx.drawImage(video, video.videoWidth*0.2, video.videoHeight*0.4, video.videoWidth*0.6, video.videoHeight*0.2, 0, 0, 400, 100);
+                    // 1. REESCALADO PARA PRECISIÓN: Agrandamos la imagen para que la IA la vea mejor
+                    // Definimos el área de recorte (centro del video)
+                    const cropW = video.videoWidth * 0.6;
+                    const cropH = video.videoHeight * 0.2;
+                    const cropX = video.videoWidth * 0.2;
+                    const cropY = video.videoHeight * 0.4;
+
+                    // El canvas tendrá el triple de resolución del recorte original
+                    canvas.width = cropW * 3; 
+                    canvas.height = cropH * 3;
+                    
+                    // Aplicamos un filtro de contraste fuerte antes de dibujar
+                    ctx.filter = "grayscale(100%) contrast(300%) brightness(120%)";
+                    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
                     
                     const { data: { text } } = await worker.recognize(canvas);
-                    const m = text.trim().match(/\d+/);
-                    if (m) {
-                        const n = parseFloat(m[0]);
+                    
+                    // 2. REGEX PARA DETECTAR NÚMEROS DE VARIOS DÍGITOS
+                    // Buscamos todas las secuencias de números y las unimos
+                    const numbersOnly = text.replace(/[^0-9]/g, '');
+                    
+                    if (numbersOnly.length > 0) {
+                        const n = parseFloat(numbersOnly);
                         resVal.innerText = n;
                         const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
                         convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
@@ -89,9 +107,12 @@
 
         window.addEventListener('load', async () => {
             await updateRates();
-            navigator.mediaDevices.getUserMedia({video: {facingMode:"environment", width: 1280}}).then(s => {
-                video.srcObject = s; initOCR();
-            }).catch(e => statusText.innerText = "Error: Cámara bloqueada (usa HTTPS)");
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment", width: { ideal: 1280 } }
+            }).then(s => {
+                video.srcObject = s; 
+                initOCR();
+            }).catch(e => statusText.innerText = "Error: Acceso a cámara bloqueado.");
         });
     </script>
 </body>
