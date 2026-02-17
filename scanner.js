@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════
-//  COINVERTER — scanner.js (Versión Móvil Corregida)
+//  COINVERTER — scanner.js
 // ══════════════════════════════════════════════════════
 
 // ── ELEMENTOS DOM ─────────────────────────────────────
@@ -24,7 +24,7 @@ let rates = { USD: 1, ARS: 1100, EUR: 0.92 };
 let worker  = null;
 let lastNum = null;
 let frozen  = false;
-let isOCRLoaded = false; // Nueva bandera para controlar el estado del OCR
+let isOCRLoaded = false; 
 
 // ══════════════════════════════════════════════════════
 //  TASAS EN TIEMPO REAL
@@ -73,7 +73,7 @@ function formatAmount(num, currency) {
 }
 
 // ══════════════════════════════════════════════════════
-//  PROCESAMIENTO DE IMAGEN
+//  PROCESAMIENTO DE IMAGEN (Otsu)
 // ══════════════════════════════════════════════════════
 
 function preprocessOtsu() {
@@ -87,7 +87,7 @@ function preprocessOtsu() {
         const g = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) | 0;
         gray[j] = g; hist[g]++;
     }
-    // Algoritmo Otsu simplificado para rendimiento
+    
     let sum = 0, sumB = 0, wB = 0, wF = 0, mB, mF, max = 0, threshold = 128;
     const total = w * h;
     for (let t = 0; t < 256; t++) sum += t * hist[t];
@@ -107,19 +107,53 @@ function preprocessOtsu() {
     ctx.putImageData(imgData, 0, 0);
 }
 
+// ══════════════════════════════════════════════════════
+//  LÓGICA DE EXTRACCIÓN NUMÉRICA (FIX ARGENTINA)
+// ══════════════════════════════════════════════════════
+
 function extractBestNumber(text) {
-    const clean = text.replace(/[$€£¥₹]/g, '').replace(/[^\d.,\s]/g, ' ').trim();
-    const matches = clean.match(/\d[\d.,]*/g);
+    // 1. Limpieza: quitar símbolos de moneda y espacios extra
+    const clean = text.replace(/[$€£¥₹]/g, '').trim();
+
+    // 2. Buscar bloques que parezcan números (dígitos, puntos y comas)
+    //    Ej: "1.000", "504.020", "1.500,50"
+    const matches = clean.match(/[\d]+([.,][\d]+)*/g);
+    
     if (!matches) return null;
+
+    // Tomamos el candidato más largo (asumiendo que es el precio principal)
     let best = matches.reduce((a, b) => b.length > a.length ? b : a, '');
     
-    // Lógica para detectar miles vs decimales
-    if (/\d{1,3}(\.\d{3})+(,\d+)?$/.test(best)) best = best.replace(/\./g, '').replace(',', '.');
-    else if (/\d{1,3}(,\d{3})+(\.\d+)?$/.test(best)) best = best.replace(/,/g, '');
-    else if (/^\d+,\d{1,2}$/.test(best)) best = best.replace(',', '.');
-    else if (/^\d+\.\d{3}$/.test(best)) best = best.replace('.', '');
-    
+    // ── LÓGICA DE INTERPRETACIÓN ──
+
+    // Caso A: Tiene AMBOS (punto y coma) -> Ej: 1.500,00
+    // Asumimos formato AR/EU: Puntos son miles, Coma es decimal.
+    if (best.includes('.') && best.includes(',')) {
+        best = best.replace(/\./g, '').replace(',', '.');
+    }
+    // Caso B: Solo tiene PUNTOS -> Ej: 1.000 o 504.020
+    // Javascript piensa que "1.000" es 1. Nosotros queremos 1000.
+    else if (best.includes('.')) {
+        const parts = best.split('.');
+        const lastPart = parts[parts.length - 1];
+
+        // Si después del último punto hay EXACTAMENTE 3 dígitos (ej: .000, .020)
+        // O si hay múltiples puntos (1.000.000) -> Son MILES.
+        if (parts.length > 2 || lastPart.length === 3) {
+            best = best.replace(/\./g, ''); // Quitamos los puntos
+        } else {
+            // Si hay 2 dígitos (ej: 10.50), asumimos que es un precio decimal estilo USA
+            // No hacemos nada, parseFloat lo entenderá.
+        }
+    }
+    // Caso C: Solo tiene COMAS -> Ej: 1500,50
+    // Reemplazamos coma por punto para Javascript
+    else if (best.includes(',')) {
+        best = best.replace(',', '.');
+    }
+
     const num = parseFloat(best);
+    // Filtros de seguridad: que sea número, mayor a 0 y menor a mil millones
     return (!isNaN(num) && num > 0 && num < 999999999) ? num : null;
 }
 
@@ -139,7 +173,6 @@ async function captureFrame() {
     btnShutter.disabled = true;
     scanLine.classList.add('paused');
 
-    // IMPORTANTE MÓVIL: Usar videoWidth real, no CSS
     const vw = video.videoWidth || 640;
     const vh = video.videoHeight || 480;
 
@@ -152,7 +185,6 @@ async function captureFrame() {
     setCamBadge('Procesando...', 'scan');
 
     try {
-        // Recorte dinámico basado en el tamaño real del video
         const cropX = Math.floor(vw * 0.10);
         const cropY = Math.floor(vh * 0.30);
         const cropW = Math.floor(vw * 0.80);
@@ -228,13 +260,13 @@ function swapCurrencies() {
 }));
 
 // ══════════════════════════════════════════════════════
-//  INICIALIZACIÓN (CÁMARA + OCR)
+//  INICIALIZACIÓN
 // ══════════════════════════════════════════════════════
 
 async function initOCR() {
     try {
         worker = await Tesseract.createWorker('eng', 1, { 
-            logger: () => {}, // Desactivar logs para rendimiento
+            logger: () => {}, 
             errorHandler: () => {} 
         });
         await worker.setParameters({
@@ -251,8 +283,6 @@ async function initOCR() {
 }
 
 async function startCamera() {
-    // Verificación de Seguridad para Móviles (HTTPS)
-    // iOS y Android no inician la cámara sin HTTPS (excepto localhost)
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     if (!window.isSecureContext && !isLocal) {
         showCameraFallback('Error: En móviles debés usar HTTPS.');
@@ -263,8 +293,6 @@ async function startCamera() {
     setCamBadge('Iniciando cámara...', 'scan');
 
     try {
-        // CORRECCIÓN MÓVIL: No pedir width/height específicos.
-        // Solo pedir facingMode 'environment' (cámara trasera).
         const constraints = {
             video: { facingMode: 'environment' },
             audio: false
@@ -272,18 +300,15 @@ async function startCamera() {
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         
-        // CORRECCIÓN CRÍTICA: Forzar atributos HTML necesarios para iPhone/Safari
         video.setAttribute('autoplay', '');
         video.setAttribute('muted', '');
         video.setAttribute('playsinline', '');
         
         video.srcObject = stream;
         
-        // Esperar a que el video tenga metadata para habilitar UI
         video.onloadedmetadata = () => {
             video.play().catch(e => console.log("Play forzado:", e));
             btnShutter.disabled = false;
-            // Si el OCR no cargó aún, avisar
             if (!isOCRLoaded) setCamBadge('Cargando cerebro...', 'scan');
             else setCamBadge('Listo para escanear', '');
         };
@@ -305,11 +330,10 @@ window.retryCameraAccess = async function() {
     await startCamera();
 }
 
-// INIT: Arrancamos cámara RAPIDO, luego cargamos OCR y tasas
 async function init() {
-    startCamera(); // Prioridad 1: Que el usuario vea video
-    updateRates(); // Prioridad 2: Datos
-    initOCR();     // Prioridad 3: Procesamiento pesado
+    startCamera(); 
+    updateRates(); 
+    initOCR();     
 }
 
 window.addEventListener('load', init);
