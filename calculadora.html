@@ -4,56 +4,212 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Coinverter | Manual</title>
+
+    <!-- ── SEGURIDAD ─────────────────────────────────────────────── -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src  'self' 'unsafe-inline'
+                    https://pagead2.googlesyndication.com
+                    https://partner.googleadservices.com
+                    https://tpc.googlesyndication.com
+                    https://www.googletagservices.com
+                    https://adservice.google.com
+                    https://adservice.google.com.ar
+                    https://fonts.googleapis.com;
+        style-src   'self' 'unsafe-inline' https://fonts.googleapis.com;
+        font-src    'self' https://fonts.gstatic.com;
+        img-src     'self' data: blob: https:;
+        connect-src 'self'
+                    https://open.er-api.com
+                    https://api.frankfurter.app
+                    https://pagead2.googlesyndication.com;
+        frame-src   https://googleads.g.doubleclick.net
+                    https://tpc.googlesyndication.com;
+        object-src  'none';
+        base-uri    'self';
+        form-action 'none';
+    ">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()">
+
+    <!-- ── SEO ───────────────────────────────────────────────────── -->
+    <meta name="description" content="Conversión manual de monedas entre ARS, USD y EUR en tiempo real.">
+    <meta name="robots" content="index, follow">
+
     <link rel="icon" type="image/png" href="icons/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="scanner.css">
+
+    <!-- ── GOOGLE ADSENSE ────────────────────────────────────────── -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6290154661573077"
+        crossorigin="anonymous"></script>
+
+    <style>
+        .manual-input-wrap {
+            width: 100%;
+            background: #0d0d0d;
+            border: 1px solid #1a1a1a;
+            border-radius: 18px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .manual-input-wrap .label {
+            font-size: 9px; color: #444;
+            letter-spacing: 1.3px; text-transform: uppercase;
+        }
+        #manual-input {
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-family: 'Roboto', sans-serif;
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: -2px;
+            width: 100%;
+            outline: none;
+            /* Ocultar flechas en todos los navegadores */
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+        #manual-input::placeholder { color: #2a2a2a; }
+        #manual-input::-webkit-outer-spin-button,
+        #manual-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        #manual-input:focus { caret-color: #32d74b; }
+
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            background: rgba(255,255,255,0.04);
+            color: rgba(255,255,255,0.5);
+            text-decoration: none;
+            font-size: 13px;
+            padding: 12px 26px;
+            border-radius: 100px;
+            border: 1px solid rgba(255,255,255,0.07);
+            transition: background 0.2s, color 0.2s;
+        }
+        .btn-back:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
+
+        /* Espacio publicitario */
+        .ad-slot {
+            width: 100%;
+            min-height: 60px;
+            margin: 16px 0;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+    </style>
 </head>
 <body>
+
+    <!-- ── NAVBAR ─────────────────────────────────────────────────── -->
     <header class="navbar">
         <div class="full-container">
-            <div class="logo-area"><img src="icons/logo.png" class="nav-logo" alt="logo"><span class="logo-text">Coinverter</span></div>
+            <div class="logo-area">
+                <img src="icons/logo.png" class="nav-logo" alt="Coinverter logo">
+                <span class="logo-text">Coinverter</span>
+            </div>
         </div>
     </header>
 
     <main class="full-content">
         <section class="scanner-section">
-            <div class="intro-text"><h1>Conversión Manual</h1><p>Ingresa el monto a convertir.</p></div>
-            <div class="input-card"><input type="number" id="manual-input" placeholder="0" autofocus></div>
+
+            <div class="intro-text">
+                <h1>Conversión Manual</h1>
+                <p>Ingresá el monto a convertir.</p>
+            </div>
+
+            <!-- ── INPUT NUMÉRICO ──────────────────────────────────── -->
+            <!-- inputmode="decimal" abre teclado numérico en móviles  -->
+            <!-- type="number" asegura solo dígitos                    -->
+            <div class="manual-input-wrap">
+                <span class="label">Monto</span>
+                <input
+                    type="number"
+                    id="manual-input"
+                    placeholder="0"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    autocorrect="off"
+                    spellcheck="false"
+                    min="0"
+                    autofocus
+                    aria-label="Ingresá el monto a convertir"
+                >
+            </div>
+
+            <!-- ── SELECTOR DE MONEDAS ─────────────────────────────── -->
             <div class="converter-controls">
-                <select id="from-currency"><option value="USD">USD</option><option value="ARS" selected>ARS</option></select>
-                <img src="icons/conv.png" class="conv-icon" alt="icon">
-                <select id="to-currency"><option value="USD" selected>USD</option><option value="ARS">ARS</option></select>
+                <div class="currency-select-wrap">
+                    <span class="currency-label">Desde</span>
+                    <select id="from-currency" aria-label="Moneda origen">
+                        <option value="ARS" selected>ARS</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                    </select>
+                </div>
+                <button class="swap-btn" onclick="swapCurrencies()" aria-label="Intercambiar monedas">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+                    </svg>
+                </button>
+                <div class="currency-select-wrap">
+                    <span class="currency-label">Hacia</span>
+                    <select id="to-currency" aria-label="Moneda destino">
+                        <option value="USD" selected>USD</option>
+                        <option value="ARS">ARS</option>
+                        <option value="EUR">EUR</option>
+                    </select>
+                </div>
             </div>
-            <div class="result-area">
-                <span class="label">Monto ingresado</span><div id="result-value" class="value-main">---</div>
-                <span class="label">Conversión estimada</span><div id="converted-value" class="value-sub">---</div>
+
+            <!-- ── RESULTADO ───────────────────────────────────────── -->
+            <div class="result-area" aria-live="polite">
+                <div class="result-row">
+                    <div class="result-col">
+                        <span class="label">Monto ingresado</span>
+                        <span class="value-from" id="result-value">---</span>
+                    </div>
+                    <span class="currency-tag" id="from-tag">ARS</span>
+                </div>
+                <div class="result-divider"></div>
+                <div class="result-row">
+                    <div class="result-col">
+                        <span class="label">Conversión estimada</span>
+                        <span class="value-to" id="converted-value">---</span>
+                    </div>
+                    <span class="currency-tag" id="to-tag">USD</span>
+                </div>
             </div>
-            <div class="action-footer"><a href="index.html" class="btn-manual">Regresar al Escáner</a></div>
+
+            <!-- ── ESPACIO PARA ANUNCIO ────────────────────────────── -->
+            <div class="ad-slot" aria-label="Publicidad">
+                <ins class="adsbygoogle"
+                    style="display:block"
+                    data-ad-client="ca-pub-6290154661573077"
+                    data-ad-slot="auto"
+                    data-ad-format="auto"
+                    data-full-width-responsive="true"></ins>
+                <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+            </div>
+
+            <!-- ── FOOTER ──────────────────────────────────────────── -->
+            <div class="action-footer">
+                <a href="index.html" class="btn-back">Volver al Scanner</a>
+            </div>
+
         </section>
     </main>
 
-    <script>
-        const input = document.getElementById('manual-input');
-        const resVal = document.getElementById('result-value');
-        const convVal = document.getElementById('converted-value');
-        const fromC = document.getElementById('from-currency');
-        const toC = document.getElementById('to-currency');
-        let rates = {};
-
-        function update() {
-            const n = parseFloat(input.value);
-            if (isNaN(n)) { resVal.innerText = "---"; convVal.innerText = "---"; return; }
-            resVal.innerText = n;
-            const total = n * (rates[`${fromC.value}_${toC.value}`] || 1);
-            convVal.innerText = total.toLocaleString('es-AR', {minimumFractionDigits:2}) + " " + toC.value;
-        }
-
-        window.addEventListener('load', () => {
-            const rate = parseFloat(localStorage.getItem('rate') || 1000);
-            rates = { "USD_ARS": rate, "ARS_USD": 1/rate };
-            input.addEventListener('input', update);
-            [fromC, toC].forEach(s => s.addEventListener('change', update));
-        });
-    </script>
+    <script src="calculadora.js" defer></script>
 </body>
 </html>
