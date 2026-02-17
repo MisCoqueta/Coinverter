@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════
-//  COINVERTER — scanner.js
+//  COINVERTER — scanner.js (Versión Móvil Corregida)
 // ══════════════════════════════════════════════════════
 
 // ── ELEMENTOS DOM ─────────────────────────────────────
@@ -20,82 +20,39 @@ const canvas      = document.getElementById('canvas');
 const ctx         = canvas.getContext('2d', { willReadFrequently: true });
 
 // ── ESTADO ────────────────────────────────────────────
-// Tasas base USD — se sobreescriben con datos reales
-// ARS oficial ~1100, EUR ~0.92 (Feb 2026)
 let rates = { USD: 1, ARS: 1100, EUR: 0.92 };
 let worker  = null;
 let lastNum = null;
 let frozen  = false;
+let isOCRLoaded = false; // Nueva bandera para controlar el estado del OCR
 
 // ══════════════════════════════════════════════════════
 //  TASAS EN TIEMPO REAL
 // ══════════════════════════════════════════════════════
 
 async function updateRates() {
-    // Intentar cargar cache válido (< 1 hora)
     try {
-        const cached   = JSON.parse(localStorage.getItem('coinverter_rates') || 'null');
+        const cached = JSON.parse(localStorage.getItem('coinverter_rates') || 'null');
         const cachedAt = parseInt(localStorage.getItem('coinverter_rates_ts') || '0');
         if (cached && cached.ARS && (Date.now() - cachedAt) < 3600000) {
             rates = cached;
-            console.log('[Rates] Cache OK — ARS:', rates.ARS, 'EUR:', rates.EUR);
-            showRateBadge();
             return;
         }
     } catch(e) {}
 
-    // API 1: open.er-api.com (gratuita, sin key)
     try {
-        const res  = await fetch('https://open.er-api.com/v6/latest/USD');
+        const res = await fetch('https://open.er-api.com/v6/latest/USD');
         const data = await res.json();
         if (data?.rates?.ARS) {
             rates = { USD: 1, ARS: data.rates.ARS, EUR: data.rates.EUR };
-            saveRates();
-            console.log('[Rates] API1 OK — ARS:', rates.ARS, 'EUR:', rates.EUR);
-            showRateBadge();
-            return;
+            localStorage.setItem('coinverter_rates', JSON.stringify(rates));
+            localStorage.setItem('coinverter_rates_ts', Date.now());
         }
-    } catch(e) { console.warn('[Rates] API1 falló'); }
-
-    // API 2: frankfurter.app (backup)
-    try {
-        const res  = await fetch('https://api.frankfurter.app/latest?from=USD&to=ARS,EUR');
-        const data = await res.json();
-        if (data?.rates?.EUR) {
-            rates = { USD: 1, ARS: data.rates.ARS || 1100, EUR: data.rates.EUR };
-            saveRates();
-            console.log('[Rates] API2 OK — EUR:', rates.EUR);
-            showRateBadge();
-            return;
-        }
-    } catch(e) { console.warn('[Rates] API2 falló'); }
-
-    // Fallback: usar valores hardcodeados y avisarle al usuario
-    console.warn('[Rates] Usando tasas de referencia offline.');
-    showRateBadge(true);
-}
-
-function saveRates() {
-    localStorage.setItem('coinverter_rates',    JSON.stringify(rates));
-    localStorage.setItem('coinverter_rates_ts', Date.now());
-}
-
-function showRateBadge(offline = false) {
-    const arsStr = rates.ARS >= 1 ? rates.ARS.toFixed(0) : rates.ARS.toFixed(4);
-    const eurStr = rates.EUR.toFixed(4);
-    const msg    = offline
-        ? `⚠️ Sin conexión · valores de referencia`
-        : `1 USD = ${arsStr} ARS · ${eurStr} EUR`;
-    setCamBadge(msg, offline ? 'error' : '');
-    setTimeout(() => setCamBadge('Listo para escanear', ''), 4000);
+    } catch(e) { console.warn('Usando tasas offline/cache'); }
 }
 
 // ══════════════════════════════════════════════════════
-//  CONVERSIÓN
-//  Todas las tasas son "cuántas unidades por 1 USD"
-//  Para convertir X de moneda A → B:
-//    X_en_USD = X / rates[A]
-//    resultado = X_en_USD * rates[B]
+//  CONVERSIÓN Y FORMATO
 // ══════════════════════════════════════════════════════
 
 function convert(amount, from, to) {
@@ -104,52 +61,41 @@ function convert(amount, from, to) {
     return inUSD * (rates[to] || 1);
 }
 
-// ══════════════════════════════════════════════════════
-//  FORMATO DE NÚMERO — máximo 2 decimales, sin ceros extra
-// ══════════════════════════════════════════════════════
-
 function formatAmount(num, currency) {
-    // JPY y monedas sin decimales → 0 decimales
     const noDecimals = ['JPY', 'CLP', 'PYG'];
     if (noDecimals.includes(currency)) {
         return Math.round(num).toLocaleString('es-AR');
     }
-
-    // Para el resto: máximo 2 decimales, sin ceros innecesarios
-    // ej: 3.10 → "3,10" | 3.1 → "3,1" | 3.00 → "3"
-    const fixed2 = parseFloat(num.toFixed(2));
-    return fixed2.toLocaleString('es-AR', {
+    return parseFloat(num.toFixed(2)).toLocaleString('es-AR', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2
     });
 }
 
 // ══════════════════════════════════════════════════════
-//  PREPROCESAMIENTO — Umbral Otsu
+//  PROCESAMIENTO DE IMAGEN
 // ══════════════════════════════════════════════════════
 
 function preprocessOtsu() {
     const w = canvas.width, h = canvas.height;
     const imgData = ctx.getImageData(0, 0, w, h);
-    const d       = imgData.data;
-    const gray    = new Uint8Array(w * h);
-    const hist    = new Int32Array(256);
+    const d = imgData.data;
+    const gray = new Uint8Array(w * h);
+    const hist = new Int32Array(256);
 
     for (let i = 0, j = 0; i < d.length; i += 4, j++) {
         const g = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) | 0;
         gray[j] = g; hist[g]++;
     }
-
+    // Algoritmo Otsu simplificado para rendimiento
+    let sum = 0, sumB = 0, wB = 0, wF = 0, mB, mF, max = 0, threshold = 128;
     const total = w * h;
-    let sum = 0;
     for (let t = 0; t < 256; t++) sum += t * hist[t];
-    let sumB = 0, wB = 0, max = 0, threshold = 128;
     for (let t = 0; t < 256; t++) {
-        wB += hist[t]; if (!wB) continue;
-        const wF = total - wB; if (!wF) break;
+        wB += hist[t]; if (wB === 0) continue;
+        wF = total - wB; if (wF === 0) break;
         sumB += t * hist[t];
-        const mB = sumB / wB;
-        const mF = (sum - sumB) / wF;
+        mB = sumB / wB; mF = (sum - sumB) / wF;
         const between = wB * wF * (mB - mF) ** 2;
         if (between > max) { max = between; threshold = t; }
     }
@@ -161,24 +107,20 @@ function preprocessOtsu() {
     ctx.putImageData(imgData, 0, 0);
 }
 
-// ══════════════════════════════════════════════════════
-//  EXTRACCIÓN DE NÚMERO
-// ══════════════════════════════════════════════════════
-
 function extractBestNumber(text) {
-    const clean   = text.replace(/[$€£¥₹]/g, '').replace(/[^\d.,\s]/g, ' ').trim();
+    const clean = text.replace(/[$€£¥₹]/g, '').replace(/[^\d.,\s]/g, ' ').trim();
     const matches = clean.match(/\d[\d.,]*/g);
     if (!matches) return null;
-
     let best = matches.reduce((a, b) => b.length > a.length ? b : a, '');
-
-    if      (/\d{1,3}(\.\d{3})+(,\d+)?$/.test(best)) best = best.replace(/\./g, '').replace(',', '.');
+    
+    // Lógica para detectar miles vs decimales
+    if (/\d{1,3}(\.\d{3})+(,\d+)?$/.test(best)) best = best.replace(/\./g, '').replace(',', '.');
     else if (/\d{1,3}(,\d{3})+(\.\d+)?$/.test(best)) best = best.replace(/,/g, '');
-    else if (/^\d+,\d{1,2}$/.test(best))              best = best.replace(',', '.');
-    else if (/^\d+\.\d{3}$/.test(best))               best = best.replace('.', '');
-
+    else if (/^\d+,\d{1,2}$/.test(best)) best = best.replace(',', '.');
+    else if (/^\d+\.\d{3}$/.test(best)) best = best.replace('.', '');
+    
     const num = parseFloat(best);
-    return (!isNaN(num) && num > 0 && num < 999_999_999) ? num : null;
+    return (!isNaN(num) && num > 0 && num < 999999999) ? num : null;
 }
 
 // ══════════════════════════════════════════════════════
@@ -187,39 +129,41 @@ function extractBestNumber(text) {
 
 async function captureFrame() {
     if (frozen) return;
+    
+    if (!isOCRLoaded) {
+        setCamBadge('El OCR aún está cargando...', 'scan');
+        return;
+    }
+
     frozen = true;
     btnShutter.disabled = true;
     scanLine.classList.add('paused');
 
-    const vw = video.videoWidth  || 640;
+    // IMPORTANTE MÓVIL: Usar videoWidth real, no CSS
+    const vw = video.videoWidth || 640;
     const vh = video.videoHeight || 480;
 
-    // Congelar frame visible
     canvas.width = vw; canvas.height = vh;
     ctx.drawImage(video, 0, 0);
-    frozenImg.src = canvas.toDataURL('image/jpeg', 0.95);
+    frozenImg.src = canvas.toDataURL('image/jpeg', 0.90);
     frozenImg.style.display = 'block';
 
     procOverlay.classList.add('visible');
-    setCamBadge('Leyendo precio...', 'scan');
+    setCamBadge('Procesando...', 'scan');
 
     try {
-        // Recortar zona del scan-box
-        const cropX = Math.floor(vw * 0.11);
-        const cropY = Math.floor(vh * 0.31);
-        const cropW = Math.floor(vw * 0.78);
-        const cropH = Math.floor(vh * 0.38);
+        // Recorte dinámico basado en el tamaño real del video
+        const cropX = Math.floor(vw * 0.10);
+        const cropY = Math.floor(vh * 0.30);
+        const cropW = Math.floor(vw * 0.80);
+        const cropH = Math.floor(vh * 0.40);
 
-        canvas.width  = cropW * 2;
-        canvas.height = cropH * 2;
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+        canvas.width = cropW;
+        canvas.height = cropH;
+        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
         preprocessOtsu();
 
-        const { data: { text, confidence } } = await worker.recognize(canvas);
-        console.log('[OCR]', JSON.stringify(text), '| conf:', confidence.toFixed(1));
-
+        const { data: { text } } = await worker.recognize(canvas);
         const num = extractBestNumber(text);
 
         if (num !== null) {
@@ -228,17 +172,16 @@ async function captureFrame() {
             setCamBadge('✓ Precio detectado', 'ok');
             showRetry(true);
         } else {
-            setCamBadge('No encontré un número. Acercate más.', 'error');
+            setCamBadge('No se detectó número', 'error');
             showRetry(true);
-            setTimeout(retryCapture, 3000);
+            setTimeout(retryCapture, 2500);
         }
 
     } catch(e) {
-        console.error('[OCR Error]', e);
-        setCamBadge('Error al leer. Reintentá.', 'error');
+        console.error(e);
+        setCamBadge('Error al leer', 'error');
         setTimeout(retryCapture, 2000);
     }
-
     procOverlay.classList.remove('visible');
 }
 
@@ -249,27 +192,23 @@ function retryCapture() {
     scanLine.classList.remove('paused');
     btnShutter.disabled = false;
     showRetry(false);
-    setCamBadge('Listo para escanear', '');
+    setCamBadge(isOCRLoaded ? 'Listo para escanear' : 'Cargando OCR...', '');
 }
 
 // ══════════════════════════════════════════════════════
-//  UI HELPERS
+//  INTERFAZ
 // ══════════════════════════════════════════════════════
 
 function showResult(num) {
-    const from   = fromC.value;
-    const to     = toC.value;
-    const result = convert(num, from, to);
-
-    console.log(`[Convert] ${num} ${from} → ${to} | rates[${from}]=${rates[from]} rates[${to}]=${rates[to]} | result=${result}`);
-
-    resVal.innerText  = formatAmount(num, from);
-    convVal.innerText = formatAmount(result, to);
+    const from = fromC.value;
+    const to = toC.value;
+    resVal.innerText = formatAmount(num, from);
+    convVal.innerText = formatAmount(convert(num, from, to), to);
 }
 
 function setCamBadge(msg, type) {
     camBadge.textContent = msg;
-    camBadge.className   = 'cam-status-badge' + (type ? ' ' + type : '');
+    camBadge.className = 'cam-status-badge' + (type ? ' ' + type : '');
 }
 
 function showRetry(show) {
@@ -277,51 +216,100 @@ function showRetry(show) {
 }
 
 function swapCurrencies() {
-    const tmp   = fromC.value;
-    fromC.value = toC.value;
-    toC.value   = tmp;
-    updateCurrencyTags();
+    const tmp = fromC.value; fromC.value = toC.value; toC.value = tmp;
+    fromTag.textContent = fromC.value; toTag.textContent = toC.value;
     if (lastNum) showResult(lastNum);
 }
 
-function updateCurrencyTags() {
+[fromC, toC].forEach(s => s.addEventListener('change', () => {
     fromTag.textContent = fromC.value;
-    toTag.textContent   = toC.value;
-}
+    toTag.textContent = toC.value;
+    if (lastNum) showResult(lastNum);
+}));
 
 // ══════════════════════════════════════════════════════
-//  INIT
+//  INICIALIZACIÓN (CÁMARA + OCR)
 // ══════════════════════════════════════════════════════
 
-async function init() {
-    setCamBadge('Cargando...', '');
-    await updateRates();
-
-    worker = await Tesseract.createWorker('eng', 1, { logger: () => {} });
-    await worker.setParameters({
-        tessedit_char_whitelist: '0123456789.,',
-        tessedit_pageseg_mode:   '6',
-        tessedit_ocr_engine_mode:'2',
-        user_defined_dpi:        '200',
-    });
-
+async function initOCR() {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        worker = await Tesseract.createWorker('eng', 1, { 
+            logger: () => {}, // Desactivar logs para rendimiento
+            errorHandler: () => {} 
         });
-        video.srcObject = stream;
-        video.addEventListener('loadedmetadata', () => {
-            btnShutter.disabled = false;
+        await worker.setParameters({
+            tessedit_char_whitelist: '0123456789.,',
+            tessedit_pageseg_mode: '6'
         });
+        isOCRLoaded = true;
+        if (!frozen) setCamBadge('Listo para escanear', '');
+        console.log("OCR Cargado");
     } catch(e) {
-        setCamBadge('Sin acceso a la cámara', 'error');
+        console.error("Error OCR:", e);
+        setCamBadge('Error cargando OCR', 'error');
     }
 }
 
-// ── EVENTOS ───────────────────────────────────────────
-[fromC, toC].forEach(s => s.addEventListener('change', () => {
-    updateCurrencyTags();
-    if (lastNum) showResult(lastNum);
-}));
+async function startCamera() {
+    // Verificación de Seguridad para Móviles (HTTPS)
+    // iOS y Android no inician la cámara sin HTTPS (excepto localhost)
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (!window.isSecureContext && !isLocal) {
+        showCameraFallback('Error: En móviles debés usar HTTPS.');
+        setCamBadge('Requiere HTTPS', 'error');
+        return;
+    }
+
+    setCamBadge('Iniciando cámara...', 'scan');
+
+    try {
+        // CORRECCIÓN MÓVIL: No pedir width/height específicos.
+        // Solo pedir facingMode 'environment' (cámara trasera).
+        const constraints = {
+            video: { facingMode: 'environment' },
+            audio: false
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // CORRECCIÓN CRÍTICA: Forzar atributos HTML necesarios para iPhone/Safari
+        video.setAttribute('autoplay', '');
+        video.setAttribute('muted', '');
+        video.setAttribute('playsinline', '');
+        
+        video.srcObject = stream;
+        
+        // Esperar a que el video tenga metadata para habilitar UI
+        video.onloadedmetadata = () => {
+            video.play().catch(e => console.log("Play forzado:", e));
+            btnShutter.disabled = false;
+            // Si el OCR no cargó aún, avisar
+            if (!isOCRLoaded) setCamBadge('Cargando cerebro...', 'scan');
+            else setCamBadge('Listo para escanear', '');
+        };
+
+    } catch(e) {
+        console.error('Cam Error:', e);
+        showCameraFallback('No se pudo acceder a la cámara. Verificá los permisos.');
+        setCamBadge('Sin acceso a cámara', 'error');
+    }
+}
+
+function showCameraFallback(msg) {
+    document.getElementById('cam-fallback-msg').textContent = msg;
+    document.getElementById('cam-fallback').classList.add('visible');
+}
+
+window.retryCameraAccess = async function() {
+    document.getElementById('cam-fallback').classList.remove('visible');
+    await startCamera();
+}
+
+// INIT: Arrancamos cámara RAPIDO, luego cargamos OCR y tasas
+async function init() {
+    startCamera(); // Prioridad 1: Que el usuario vea video
+    updateRates(); // Prioridad 2: Datos
+    initOCR();     // Prioridad 3: Procesamiento pesado
+}
 
 window.addEventListener('load', init);
