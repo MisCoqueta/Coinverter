@@ -9,7 +9,7 @@
     <!-- CSP: permite cámara, scripts de CDN necesarios y AdSense -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src  'self' 'unsafe-inline'
+        script-src  'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'
                     https://cdn.jsdelivr.net
                     https://pagead2.googlesyndication.com
                     https://partner.googleadservices.com
@@ -21,10 +21,14 @@
         style-src   'self' 'unsafe-inline' https://fonts.googleapis.com;
         font-src    'self' https://fonts.gstatic.com;
         img-src     'self' data: blob: https:;
-        connect-src 'self'
+        connect-src 'self' data: blob:
+                    https://cdn.jsdelivr.net
                     https://open.er-api.com
                     https://api.frankfurter.app
-                    https://pagead2.googlesyndication.com;
+                    https://pagead2.googlesyndication.com
+                    https://ep1.adtrafficquality.google
+                    https://*.googlesyndication.com
+                    https://*.googleadservices.com;
         media-src   'self' blob:;
         frame-src   https://googleads.g.doubleclick.net
                     https://tpc.googlesyndication.com;
@@ -35,7 +39,9 @@
     ">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
-    <meta http-equiv="Permissions-Policy" content="camera=(self), microphone=(), geolocation=()">
+    
+    <!-- FIX: Permiso de cámara explícito para móviles -->
+    <meta http-equiv="Permissions-Policy" content="camera=*, microphone=(), geolocation=()">
 
     <!-- ── SEO & SOCIAL ──────────────────────────────────────────── -->
     <meta name="description" content="Convertí precios en tiempo real escaneando con tu cámara. ARS, USD y EUR al instante.">
@@ -52,7 +58,7 @@
     <link rel="stylesheet" href="scanner.css">
 
     <!-- ── TESSERACT OCR ─────────────────────────────────────────── -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <!-- ── GOOGLE ADSENSE ────────────────────────────────────────── -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6290154661573077"
@@ -96,6 +102,16 @@
                 <div class="processing-overlay" id="proc-overlay">
                     <div class="big-spinner"></div>
                     <span class="processing-text">Leyendo precio...</span>
+                </div>
+
+                <!-- Fallback si no hay acceso a cámara -->
+                <div class="cam-fallback" id="cam-fallback">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="1.5" aria-hidden="true">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                    <p class="cam-fallback-msg" id="cam-fallback-msg">No se pudo acceder a la cámara.</p>
+                    <button class="cam-fallback-btn" onclick="retryCameraAccess()">Reintentar</button>
                 </div>
             </div>
 
@@ -177,6 +193,6 @@
 
     <canvas id="canvas" style="display:none;" aria-hidden="true"></canvas>
 
-    <script src="scanner.js" defer></script>
+    <script src="scanner.js"></script>
 </body>
 </html>
